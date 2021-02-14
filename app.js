@@ -1,42 +1,25 @@
 'use strict';
 
-const express = require('express');
-const ejs = require('ejs');
+const fs = require('fs');
 const path = require('path');
+/* express and https */
+const ejs = require('ejs');
+const express = require('express');
+const app = express();
+const https = require('https');
+/* parsers */
 const cookieParser = require('cookie-parser');
 const bodyParser = require('body-parser');
+/* error handler */
 const errorHandler = require('errorhandler');
+/* seesion and passport */
 const session = require('express-session');
 const passport = require('passport');
-const routes = require('./routes');
-const config = require('./conf');
+/* mqtt client for devices */
 const mqtt = require('mqtt');
-const device = require('./device');
-const fs = require('fs');
-const app = express();
-//const http = require('https');
-//const privateKey = fs.readFileSync(config.https.privateKey, 'utf8');
-//const certificate = fs.readFileSync(config.https.certificate, 'utf8');
-/*
-const credentials = {
-    key: privateKey,
-    cert: certificate
-};
-*/
-//const httpServer = http.createServer(app);
-global.devices = [];
-
-if (config.devices) {
-    config.devices.forEach(opts => {
-        new device(opts);
-    });
-}
-
-const client = mqtt.connect(`mqtt://${config.mqtt.host}`, {
-    port: config.mqtt.port,
-    username: config.mqtt.user,
-    password: config.mqtt.password
-});
+/* */
+const config = require('./config');
+const Device = require('./device');
 
 app.engine('ejs', ejs.__express);
 app.set('view engine', 'ejs');
@@ -55,182 +38,84 @@ app.use(session({
     resave: false,
     saveUninitialized: false
 }));
+
+/* passport */
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Passport configuration
+/* passport auth */
 require('./auth');
-app.get('/', routes.site.index);
-app.get('/login', routes.site.loginForm);
-app.post('/login', routes.site.login);
-app.get('/logout', routes.site.logout);
-app.get('/account', routes.site.account);
-app.get('/dialog/authorize', routes.oauth2.authorization);
-app.post('/dialog/authorize/decision', routes.oauth2.decision);
-app.post('/oauth/token', routes.oauth2.token);
-app.get('/api/userinfo', routes.user.info);
-app.get('/api/clientinfo', routes.client.info);
-/*
-app.get('/provider/v1.0', routes.user.ping);
-app.get('/provider', routes.user.ping);
-app.get('/provider/v1.0/user/devices', routes.user.devices);
-app.post('/provider/v1.0/user/devices/query', routes.user.query);
-app.post('/provider/v1.0/user/devices/action', routes.user.action);
-app.post('/provider/v1.0/user/unlink', routes.user.unlink);
-*/
-app.get('/v1.0', routes.user.ping);
-app.get('/', routes.user.ping);
-app.get('/v1.0/user/devices', routes.user.devices);
-app.post('/v1.0/user/devices/query', routes.user.query);
-app.post('/v1.0/user/devices/action', routes.user.action);
-app.post('/v1.0/user/unlink', routes.user.unlink);
 
-app.listen(config.http.port, config.http.host);
-//console.log(`Running on http://${HOST}:${PORT}`);
+/* routers */
+const {site: r_site, oauth2: r_oauth2, user: r_user, client: r_client} = require('./routes');
+app.get('/', r_site.index);
+app.get('/login', r_site.loginForm);
+app.post('/login', r_site.login);
+app.get('/logout', r_site.logout);
+app.get('/account', r_site.account);
+app.get('/dialog/authorize', r_oauth2.authorization);
+app.post('/dialog/authorize/decision', r_oauth2.decision);
+app.post('/oauth/token', r_oauth2.token);
+app.get('/api/userinfo', r_user.info);
+app.get('/api/clientinfo', r_client.info);
+app.get('/provider/v1.0', r_user.ping);
+app.get('/provider', r_user.ping);
+app.get('/provider/v1.0/user/devices', r_user.devices);
+app.post('/provider/v1.0/user/devices/query', r_user.query);
+app.post('/provider/v1.0/user/devices/action', r_user.action);
+app.post('/provider/v1.0/user/unlink', r_user.unlink);
 
-function findDevIndex(arr, elem) {
-    for (var i = 0; i < arr.length; i++) {
-        if (arr[i].type === elem) {
-            return i;
-        }
-    }
-    return false;
+/* create https server */
+const privateKey = fs.readFileSync(config.https.privateKey, 'utf8');
+const certificate = fs.readFileSync(config.https.certificate, 'utf8');
+const credentials = {
+    key: privateKey,
+    cert: certificate
+};
+const httpsServer = https.createServer(credentials, app);
+httpsServer.listen(config.https.port);
+
+/* cache devices from config to global */
+global.devices = [];
+if (config.devices) {
+    config.devices.forEach(opts => {
+        global.devices.push(new Device(opts));
+    });
 }
 
-
-const statPairs = [];
-
+/* create subscriptions array */
+const subscriptions = [];
 global.devices.forEach(device => {
-    device.client = client;
     device.data.custom_data.mqtt.forEach(mqtt => {
-        const statType = mqtt.type || false;
-        const statTopic = mqtt.stat || false;
-        if (statTopic && statType) {
-            statPairs.push({
-                deviceId: device.data.id,
-                topic: statTopic,
-                topicType: statType
-            });
+        const {instance, state: topic} = mqtt;
+        if (instance != undefined && topic != undefined) {
+            subscriptions.push({deviceId: device.data.id, instance, topic});
         }
     });
 });
 
-if (statPairs) {
-    client.on('connect', () => {
-        client.subscribe(statPairs.map(pair => pair.topic));
-        client.on('message', (topic, message) => {
-            const matchedDeviceId = statPairs.findIndex(pair => topic.toLowerCase() === pair.topic.toLowerCase());
-            if (matchedDeviceId == -1) return;
+/* Create MQTT client (variable) in global */
+global.mqttClient = mqtt.connect(`mqtt://${config.mqtt.host}`, {
+    port: config.mqtt.port,
+    username: config.mqtt.user,
+    password: config.mqtt.password
+})
+/* on connect event handler */
+.on('connect', () => {
+    mqttClient.subscribe(subscriptions.map(pair => pair.topic));
+})
+/* on offline event handler */
+.on('offline', () => {
+    /* */
+})
+/* on get message event handler */
+.on('message', (topic, message) => {
+    const subscription = subscriptions.find(sub => topic.toLowerCase() === sub.topic.toLowerCase());
+    if (subscription == undefined) return;
 
-            const device = global.devices.find(device => device.data.id == statPairs[matchedDeviceId].deviceId);
-            var devindx;
-            switch (statPairs[matchedDeviceId].topicType) {
-                case 'on':
-                    try {
-                        devindx = findDevIndex(device.data.capabilities, 'devices.capabilities.on_off')
-                        device.data.capabilities[devindx].state.instance = statPairs[matchedDeviceId].topicType;
-                        device.data.capabilities[devindx].state.value = ['on', '1', 'true'].includes(message.toString().toLowerCase());
-                    } catch (err) {
-                        console.log(err);
-                    }
-                    break;
-                case 'mute':
-                    try {
-                        devindx = findDevIndex(device.data.capabilities, 'devices.capabilities.toggle')
-                        device.data.capabilities[devindx].state.instance = statPairs[matchedDeviceId].topicType;
-                        device.data.capabilities[devindx].state.value = ['on', '1', 'true'].includes(message.toString().toLowerCase());
-                    } catch (err) {
-                        console.log(err);
-                    }
-                    break;
-                case 'hsv':
-                    try {
-                        devindx = findDevIndex(device.data.capabilities, 'devices.capabilities.color_setting')
-                        device.data.capabilities[devindx].state.instance = statPairs[matchedDeviceId].topicType;
-                        device.data.capabilities[devindx].state.value = JSON.parse(message);
-                    } catch (err) {
-                        console.log(err);
-                    }
-                    break;
-                case 'rgb':
-                    try {
-                        devindx = findDevIndex(device.data.capabilities, 'devices.capabilities.color_setting')
-                        device.data.capabilities[devindx].state.instance = statPairs[matchedDeviceId].topicType;
-                        device.data.capabilities[devindx].state.value = JSON.parse(message);
-                    } catch (err) {
-                        console.log(err);
-                    }
-                    break;
-                case 'temperature_k':
-                    try {
-                        devindx = findDevIndex(device.data.capabilities, 'devices.capabilities.color_setting')
-                        device.data.capabilities[devindx].state.instance = statPairs[matchedDeviceId].topicType;
-                        device.data.capabilities[devindx].state.value = JSON.parse(message);
-                    } catch (err) {
-                        console.log(err);
-                    }
-                    break;        
-                case 'thermostat':
-                    try {
-                        devindx = findDevIndex(device.data.capabilities, 'devices.capabilities.mode')
-                        device.data.capabilities[devindx].state.instance = statPairs[matchedDeviceId].topicType;
-                        device.data.capabilities[devindx].state.value = JSON.parse(message);
-                    } catch (err) {
-                        console.log(err);
-                    }
-                    break;
-                case 'fan_speed':
-                    try {
-                        devindx = findDevIndex(device.data.capabilities, 'devices.capabilities.mode')
-                        device.data.capabilities[devindx].state.instance = statPairs[matchedDeviceId].topicType;
-                        device.data.capabilities[devindx].state.value = JSON.parse(message);
-                    } catch (err) {
-                        console.log(err);
-                    }
-                    break;    
-                case 'brightness':
-                    try {
-                        devindx = findDevIndex(device.data.capabilities, 'devices.capabilities.range')
-                        device.data.capabilities[devindx].state.instance = statPairs[matchedDeviceId].topicType;
-                        device.data.capabilities[devindx].state.value = JSON.parse(message);
-                    } catch (err) {
-                        console.log(err);
-                    }
-                    break;
-                case 'temperature':
-                    try {
-                        devindx = findDevIndex(device.data.capabilities, 'devices.capabilities.range')
-                        device.data.capabilities[devindx].state.instance = statPairs[matchedDeviceId].topicType;
-                        device.data.capabilities[devindx].state.value = JSON.parse(message);
-                    } catch (err) {
-                        console.log(err);
-                    }
-                    break;
-                case 'volume':
-                    try {
-                        devindx = findDevIndex(device.data.capabilities, 'devices.capabilities.range')
-                        device.data.capabilities[devindx].state.instance = statPairs[matchedDeviceId].topicType;
-                        device.data.capabilities[devindx].state.value = JSON.parse(message);
-                    } catch (err) {
-                        console.log(err);
-                    }
-                    break;
-                case 'channel':
-                    try {
-                        devindx = findDevIndex(device.data.capabilities, 'devices.capabilities.range')
-                        device.data.capabilities[devindx].state.instance = statPairs[matchedDeviceId].topicType;
-                        device.data.capabilities[devindx].state.value = JSON.parse(message);
-                    } catch (err) {
-                        console.log(err);
-                    }
-                    break;                        
-                default:
-                    console.log('Unknown topic Type: ' + statPairs[matchedDeviceId].topicType);
-            };
-        });
-    });
+    const {deviceId, instance} = subscription;
+    const ldevice = global.devices.find(d => d.data.id == deviceId);  
+    ldevice.updateState(`${message}`, instance);
+});
 
-    client.on('offline', () => {
-    });
-}
 module.exports = app;

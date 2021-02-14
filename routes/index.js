@@ -6,8 +6,8 @@ const user = require('./user');
 const client = require('./client');
 
 module.exports = {
-  site,
-  oauth2,
-  user,
-  client,
+    site,
+    oauth2,
+    user,
+    client,
 };

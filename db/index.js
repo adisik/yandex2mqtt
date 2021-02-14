@@ -6,8 +6,8 @@ const accessTokens = require('./access_tokens');
 const authorizationCodes = require('./authorization_codes');
 
 module.exports = {
-  users,
-  clients,
-  accessTokens,
-  authorizationCodes,
+    users,
+    clients,
+    accessTokens,
+    authorizationCodes,
 };

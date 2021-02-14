@@ -25,10 +25,10 @@ const server = oauth2orize.createServer();
 server.serializeClient((client, done) => done(null, client.id));
 
 server.deserializeClient((id, done) => {
-  db.clients.findById(id, (error, client) => {
-    if (error) return done(error);
-    return done(null, client);
-  });
+    db.clients.findById(id, (error, client) => {
+        if (error) return done(error);
+        return done(null, client);
+    });
 });
 
 // Register supported grant types.
@@ -46,11 +46,11 @@ server.deserializeClient((id, done) => {
 // values, and will be exchanged for an access token.
 
 server.grant(oauth2orize.grant.code((client, redirectUri, user, ares, done) => {
-  const code = utils.getUid(16);
-  db.authorizationCodes.save(code, client.id, redirectUri, user.id, user.username, (error) => {
-    if (error) return done(error);
-    return done(null, code);
-  });
+    const code = utils.getUid(16);
+    db.authorizationCodes.save(code, client.id, redirectUri, user.id, user.username, (error) => {
+        if (error) return done(error);
+        return done(null, code);
+    });
 }));
 
 // Grant implicit authorization. The callback takes the `client` requesting
@@ -60,11 +60,11 @@ server.grant(oauth2orize.grant.code((client, redirectUri, user, ares, done) => {
 // values.
 
 server.grant(oauth2orize.grant.token((client, user, ares, done) => {
-  const token = utils.getUid(256);
-  db.accessTokens.save(token, user.id, client.clientId, (error) => {
-    if (error) return done(error);
-    return done(null, token);
-  });
+    const token = utils.getUid(256);
+    db.accessTokens.save(token, user.id, client.clientId, (error) => {
+        if (error) return done(error);
+        return done(null, token);
+    });
 }));
 
 // Exchange authorization codes for access tokens. The callback accepts the
@@ -75,20 +75,20 @@ server.grant(oauth2orize.grant.token((client, user, ares, done) => {
 // custom parameters by adding these to the `done()` call
 
 server.exchange(oauth2orize.exchange.code((client, code, redirectUri, done) => {
-  db.authorizationCodes.find(code, (error, authCode) => {
-    if (error) return done(error);
-    if (client.id !== authCode.clientId) return done(null, false);
-    if (redirectUri !== authCode.redirectUri) return done(null, false);
+    db.authorizationCodes.find(code, (error, authCode) => {
+        if (error) return done(error);
+        if (client.id !== authCode.clientId) return done(null, false);
+        if (redirectUri !== authCode.redirectUri) return done(null, false);
 
-    const token = utils.getUid(256);
-    db.accessTokens.save(token, authCode.userId, authCode.clientId, (error) => {
-      if (error) return done(error);
-      // Add custom params, e.g. the username
-      let params = { username: authCode.userName };
-      // Call `done(err, accessToken, [refreshToken], [params])` to issue an access token
-      return done(null, token, null, params);
+        const token = utils.getUid(256);
+        db.accessTokens.save(token, authCode.userId, authCode.clientId, (error) => {
+            if (error) return done(error);
+            // Add custom params, e.g. the username
+            let params = { username: authCode.userName };
+            // Call `done(err, accessToken, [refreshToken], [params])` to issue an access token
+            return done(null, token, null, params);
+        });
     });
-  });
 }));
 
 // Exchange user id and password for access tokens. The callback accepts the
@@ -97,25 +97,25 @@ server.exchange(oauth2orize.exchange.code((client, code, redirectUri, done) => {
 // application issues an access token on behalf of the user who authorized the code.
 
 server.exchange(oauth2orize.exchange.password((client, username, password, scope, done) => {
-  // Validate the client
-  db.clients.findByClientId(client.clientId, (error, localClient) => {
-    if (error) return done(error);
-    if (!localClient) return done(null, false);
-    if (localClient.clientSecret !== client.clientSecret) return done(null, false);
-    // Validate the user
-    db.users.findByUsername(username, (error, user) => {
-      if (error) return done(error);
-      if (!user) return done(null, false);
-      if (password !== user.password) return done(null, false);
-      // Everything validated, return the token
-      const token = utils.getUid(256);
-      db.accessTokens.save(token, user.id, client.clientId, (error) => {
+    // Validate the client
+    db.clients.findByClientId(client.clientId, (error, localClient) => {
         if (error) return done(error);
-        // Call `done(err, accessToken, [refreshToken], [params])`, see oauth2orize.exchange.code
-        return done(null, token);
-      });
+        if (!localClient) return done(null, false);
+        if (localClient.clientSecret !== client.clientSecret) return done(null, false);
+        // Validate the user
+        db.users.findByUsername(username, (error, user) => {
+            if (error) return done(error);
+            if (!user) return done(null, false);
+            if (password !== user.password) return done(null, false);
+            // Everything validated, return the token
+            const token = utils.getUid(256);
+            db.accessTokens.save(token, user.id, client.clientId, (error) => {
+                if (error) return done(error);
+                // Call `done(err, accessToken, [refreshToken], [params])`, see oauth2orize.exchange.code
+                return done(null, token);
+            });
+        });
     });
-  });
 }));
 
 // Exchange the client id and password/secret for an access token. The callback accepts the
@@ -124,20 +124,20 @@ server.exchange(oauth2orize.exchange.password((client, username, password, scope
 // application issues an access token on behalf of the client who authorized the code.
 
 server.exchange(oauth2orize.exchange.clientCredentials((client, scope, done) => {
-  // Validate the client
-  db.clients.findByClientId(client.clientId, (error, localClient) => {
-    if (error) return done(error);
-    if (!localClient) return done(null, false);
-    if (localClient.clientSecret !== client.clientSecret) return done(null, false);
-    // Everything validated, return the token
-    const token = utils.getUid(256);
-    // Pass in a null for user id since there is no user with this grant type
-    db.accessTokens.save(token, null, client.clientId, (error) => {
-      if (error) return done(error);
-      // Call `done(err, accessToken, [refreshToken], [params])`, see oauth2orize.exchange.code
-      return done(null, token);
+    // Validate the client
+    db.clients.findByClientId(client.clientId, (error, localClient) => {
+        if (error) return done(error);
+        if (!localClient) return done(null, false);
+        if (localClient.clientSecret !== client.clientSecret) return done(null, false);
+        // Everything validated, return the token
+        const token = utils.getUid(256);
+        // Pass in a null for user id since there is no user with this grant type
+        db.accessTokens.save(token, null, client.clientId, (error) => {
+            if (error) return done(error);
+            // Call `done(err, accessToken, [refreshToken], [params])`, see oauth2orize.exchange.code
+            return done(null, token);
+        });
     });
-  });
 }));
 
 // User authorization endpoint.
@@ -157,33 +157,33 @@ server.exchange(oauth2orize.exchange.clientCredentials((client, scope, done) => 
 // first, and rendering the `dialog` view.
 
 module.exports.authorization = [
-  login.ensureLoggedIn(),
-  server.authorization((clientId, redirectUri, done) => {
-    db.clients.findByClientId(clientId, (error, client) => {
-      if (error) return done(error);
-      // WARNING: For security purposes, it is highly advisable to check that
-      //          redirectUri provided by the client matches one registered with
-      //          the server. For simplicity, this example does not. You have
-      //          been warned.
-      return done(null, client, redirectUri);
-    });
-  }, (client, user, done) => {
-    // Check if grant request qualifies for immediate approval
-    
-    // Auto-approve
-    if (client.isTrusted) return done(null, true);
-    
-    db.accessTokens.findByUserIdAndClientId(user.id, client.clientId, (error, token) => {
-      // Auto-approve
-      if (token) return done(null, true);
-      
-      // Otherwise ask user
-      return done(null, false);
-    });
-  }),
-  (request, response) => {
-    response.render('dialog', { transactionId: request.oauth2.transactionID, user: request.user, client: request.oauth2.client });
-  },
+    login.ensureLoggedIn(),
+    server.authorization((clientId, redirectUri, done) => {
+        db.clients.findByClientId(clientId, (error, client) => {
+            if (error) return done(error);
+            // WARNING: For security purposes, it is highly advisable to check that
+            //          redirectUri provided by the client matches one registered with
+            //          the server. For simplicity, this example does not. You have
+            //          been warned.
+            return done(null, client, redirectUri);
+        });
+    }, (client, user, done) => {
+        // Check if grant request qualifies for immediate approval
+        
+        // Auto-approve
+        if (client.isTrusted) return done(null, true);
+        
+        db.accessTokens.findByUserIdAndClientId(user.id, client.clientId, (error, token) => {
+            // Auto-approve
+            if (token) return done(null, true);
+            
+            // Otherwise ask user
+            return done(null, false);
+        });
+    }),
+    (req, res) => {
+        res.render('dialog', { transactionId: req.oauth2.transactionID, user: req.user, client: req.oauth2.client });
+    },
 ];
 
 // User decision endpoint.
@@ -194,8 +194,8 @@ module.exports.authorization = [
 // a response.
 
 module.exports.decision = [
-  login.ensureLoggedIn(),
-  server.decision(),
+    login.ensureLoggedIn(),
+    server.decision(),
 ];
 
 
@@ -207,7 +207,7 @@ module.exports.decision = [
 // authenticate when making requests to this endpoint.
 
 module.exports.token = [
-  passport.authenticate(['basic', 'oauth2-client-password'], { session: false }),
-  server.token(),
-  server.errorHandler(),
+    passport.authenticate(['basic', 'oauth2-client-password'], { session: false }),
+    server.token(),
+    server.errorHandler(),
 ];

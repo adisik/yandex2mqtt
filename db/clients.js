@@ -1,17 +1,17 @@
 'use strict';
-const config = require('../conf');
-const clients = config.clients; 
+
+const {clients} = require('../config'); 
 
 module.exports.findById = (id, done) => {
-  for (let i = 0, len = clients.length; i < len; i++) {
-    if (clients[i].id === id) return done(null, clients[i]);
-  }
-  return done(new Error('Client Not Found'));
+    for (const client of clients) {
+        if (client.id === id) return done(null, client);
+    }
+    return done(new Error('Client Not Found'));
 };
 
 module.exports.findByClientId = (clientId, done) => {
-  for (let i = 0, len = clients.length; i < len; i++) {
-    if (clients[i].clientId === clientId) return done(null, clients[i]);
-  }
-  return done(new Error('Client Not Found'));
+    for (const client of clients) {
+        if (client.clientId === clientId) return done(null, client);
+    }
+    return done(new Error('Client Not Found'));
 };
