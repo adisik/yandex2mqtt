@@ -47,7 +47,10 @@ app.use(passport.session());
 require('./auth');
 
 /* routers */
-const {site: r_site, oauth2: r_oauth2, user: r_user, client: r_client} = require('./routes');
+const {site: r_site, oauth2: r_oauth2, user: r_user, client: r_client} = require('./routes');        
+app.get("/about", function(request, response){  
+    response.send("<h1>YANDEX2MQTT</h1>");
+});
 app.get('/', r_site.index);
 app.get('/login', r_site.loginForm);
 app.post('/login', r_site.login);
